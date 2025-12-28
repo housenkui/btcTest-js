@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin SDK 演示</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #f4f4f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1 { color: #f7931a; }
+        button { background: #f7931a; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #e88316; }
+        pre { background: #eee; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+        .label { font-weight: bold; color: #555; }
+        #result code { word-break: break-all; background: #fffbe6; padding: 2px 5px; border: 1px solid #ffe58f; }
+    </style>
+</head>
+<body>
+
+    <h1>Bitcoin SDK-JS 演示</h1>
+    <p>这是一个使用 Webpack 打包生成的 <code>btc.js</code> 基础库的演示页面。</p>
+
+    <div class="card">
+        <h3>生成/导入钱包</h3>
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <button onclick="generateWallet()">随机生成</button>
+            <button onclick="showImportMnemonic()" style="background: #2196F3;">导入助记词</button>
+            <button onclick="showImportPrivKey()" style="background: #4CAF50;">导入私钥</button>
+        </div>
+
+        <!-- 导入助记词表单 -->
+        <div id="importMnemonicArea" style="display: none; margin-bottom: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+            <input type="text" id="inputMnemonic" placeholder="请输入12或24个助记词..." style="width: 100%; padding: 8px; margin-bottom: 10px;">
+            <button onclick="importMnemonic()">确认导入助记词</button>
+        </div>
+
+        <!-- 导入私钥表单 -->
+        <div id="importPrivKeyArea" style="display: none; margin-bottom: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+            <input type="text" id="inputPrivKey" placeholder="请输入十六进制私钥..." style="width: 100%; padding: 8px; margin-bottom: 10px;">
+            <button onclick="importPrivKey()">确认导入私钥</button>
+        </div>
+
+        <div id="result" style="margin-top: 20px; display: none;">
+            <p id="mnemonicDisplay"><span class="label">助记词 (Mnemonic):</span> <br><code id="mnemonic" style="color: #d44000; font-weight: bold;"></code></p>
+            <p><span class="label">私钥 (Hex):</span> <br><code id="privKey"></code></p>
+            <p><span class="label">公钥 (Hex):</span> <br><code id="pubKey"></code></p>
+            <hr>
+            <p><span class="label">Legacy 地址 (P2PKH):</span> <br><code id="addrLegacy"></code></p>
+            <p><span class="label">Segwit 地址 (P2WPKH):</span> <br><code id="addrSegwit"></code></p>
+            <p><span class="label">Taproot 地址 (P2TR):</span> <br><code id="addrTaproot"></code></p>
+        </div>
+    </div>
+
+    <!-- 引用打包后的基础库 -->
+    <script src="dist/btc.js"></script>
+
+    <script>
+        function showImportMnemonic() {
+            document.getElementById('importMnemonicArea').style.display = 'block';
+            document.getElementById('importPrivKeyArea').style.display = 'none';
+        }
+
+        function showImportPrivKey() {
+            document.getElementById('importMnemonicArea').style.display = 'none';
+            document.getElementById('importPrivKeyArea').style.display = 'block';
+        }
+
+        // 统一渲染函数
+        async function displayResult(data) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            
+            if (data.mnemonic) {
+                document.getElementById('mnemonicDisplay').style.display = 'block';
+                document.getElementById('mnemonic').innerText = data.mnemonic;
+            } else {
+                document.getElementById('mnemonicDisplay').style.display = 'none';
+            }
+            
+            document.getElementById('privKey').innerText = data.privateKey;
+            document.getElementById('pubKey').innerText = data.publicKey;
+            document.getElementById('addrLegacy').innerText = data.addresses.legacy;
+            document.getElementById('addrSegwit').innerText = data.addresses.segwit;
+            document.getElementById('addrTaproot').innerText = data.addresses.taproot;
+        }
+
+        /**
+         * 1. 随机生成
+         */
+        async function generateWallet() {
+            try {
+                const mnemonic = btc.bip39.generateMnemonic();
+                const seed = await btc.bip39.mnemonicToSeed(mnemonic);
+                const root = btc.bip32.fromSeed(seed);
+                const path = "m/44'/0'/0'/0/0";
+                const child = root.derivePath(path);
+                
+                const privKey = child.privateKey.toString('hex');
+                const pubKey = child.publicKey.toString('hex');
+                const addresses = await getLocalAddresses(pubKey);
+
+                displayResult({ mnemonic, privateKey: privKey, publicKey: pubKey, addresses });
+            } catch (e) { alert('生成失败: ' + e.message); }
+        }
+
+        /**
+         * 2. 导入助记词
+         */
+        async function importMnemonic() {
+            const mnemonic = document.getElementById('inputMnemonic').value.trim();
+            if (!btc.bip39.validateMnemonic(mnemonic)) return alert('助记词格式错误');
+            
+            try {
+                const seed = await btc.bip39.mnemonicToSeed(mnemonic);
+                const root = btc.bip32.fromSeed(seed);
+                const child = root.derivePath("m/44'/0'/0'/0/0");
+                const privKey = child.privateKey.toString('hex');
+                const pubKey = child.publicKey.toString('hex');
+                const addresses = await getLocalAddresses(pubKey);
+
+                displayResult({ mnemonic, privateKey: privKey, publicKey: pubKey, addresses });
+            } catch (e) { alert('导入失败: ' + e.message); }
+        }
+
+        /**
+         * 3. 导入私钥
+         */
+        async function importPrivKey() {
+            const privKeyHex = document.getElementById('inputPrivKey').value.trim();
+            try {
+                // 这里使用了一个小技巧，利用 bip32 的私钥转换，或者如果你有更好的方法
+                // 由于 tiny-secp256k1 已包含在内，可以尝试：
+                // 注意：在前端我们通过 btc.bip32 来处理比较方便
+                const privBuffer = window.Buffer.from(privKeyHex, 'hex');
+                // 推导公钥
+                const pubKey = btc.address.generateKeyPair ? 
+                               (await btc.wallet.generateKeyPair(privKeyHex)).publicKey : 
+                               await derivePubKeyLocal(privKeyHex);
+
+                const addresses = await getLocalAddresses(pubKey);
+                displayResult({ privateKey: privKeyHex, publicKey: pubKey, addresses });
+            } catch (e) { alert('导入失败: ' + e.message); }
+        }
+
+        // 辅助：前端推导公钥 (如果不确定 SDK 是否有对应 API)
+        async function derivePubKeyLocal(privKeyHex) {
+            // 这里我们依赖 tiny-secp256k1 逻辑
+            // 实际上在之前的 index.js 中我们可以通过暴露 ecc 来实现
+            // 现在的环境里最稳妥是用 bip32 模拟
+            const node = btc.bip32.fromPrivateKey(window.Buffer.from(privKeyHex, 'hex'), window.Buffer.alloc(32));
+            return node.publicKey.toString('hex');
+        }
+
+        // 辅助：根据公钥获取所有地址
+        async function getLocalAddresses(pubKey) {
+            const legacy = await btc.address.generateAddress(pubKey, 'legacy');
+            const segwit = await btc.address.generateAddress(pubKey, 'segwit');
+            const schnorrPubkey = pubKey.slice(2);
+            const tapTweak = await btc.tapscript.getTapTweak(schnorrPubkey);
+            const tapTweakedPubkey = await btc.tapscript.getTapTweakedPubkey(schnorrPubkey, tapTweak);
+            const taproot = await btc.address.generateAddress(tapTweakedPubkey.tweakedPubKey, 'taproot');
+            return { legacy, segwit, taproot };
+        }
+    </script>
+</body>
+</html>
+
